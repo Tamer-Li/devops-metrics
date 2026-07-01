@@ -2,79 +2,177 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-type MemStorage struct {
-	gauge   map[string]float64
-	counter map[string][]int64
-}
-
-var memStorage = MemStorage{
-	gauge:   make(map[string]float64),
-	counter: make(map[string][]int64),
-}
-
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc(`/`, mainPage)
-	mux.HandleFunc(`/update/`, gaugeHandler)
 
+	memStorage := NewMemStorage()
+
+	apiHandler := NewHandler(memStorage)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(`/metrics`, apiHandler.DataMetrics)
+	mux.HandleFunc(`/update/`, apiHandler.MetricsHandler)
+
+	log.Println("Starting server on :8080")
 	err := http.ListenAndServe(`:8080`, mux)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 
-func mainPage(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Main Page"))
-	fmt.Println(memStorage)
+// -----------------------------------------------------------------
+// Блок MemStorage
+
+type MemStorage struct {
+	gauge   map[string]float64
+	counter map[string]int64
 }
 
-func gaugeHandler(w http.ResponseWriter, r *http.Request) {
+func NewMemStorage() *MemStorage {
+	return &MemStorage{
+		gauge:   make(map[string]float64),
+		counter: make(map[string]int64),
+	}
+}
+
+func (ms *MemStorage) Gauge() map[string]float64 {
+	return ms.gauge
+}
+
+func (ms *MemStorage) Counter() map[string]int64 {
+	return ms.counter
+}
+
+func (ms *MemStorage) GaugeSet(name string, value float64) {
+	ms.gauge[name] = value
+}
+
+func (ms *MemStorage) CounterSet(name string, value int64) {
+	ms.counter[name] += value
+}
+
+// -----------------------------------------------------------------
+
+// -----------------------------------------------------------------
+// Блок Handler
+
+type MetricsStorage interface {
+	GaugeSet(name string, value float64)
+	CounterSet(name string, value int64)
+	Gauge() map[string]float64
+	Counter() map[string]int64
+}
+
+type Handler struct {
+	MS MetricsStorage
+}
+
+func NewHandler(ms MetricsStorage) *Handler {
+	return &Handler{
+		MS: ms,
+	}
+}
+
+func (h Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
 	if r.Method != http.MethodPost {
-		rData := r.URL.Path
-		fmt.Println(rData)
+		log.Printf("Rejected: method %s not allowed", r.Method)
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
 	urlPath := strings.Split(r.URL.Path, "/")
 	if len(urlPath) != 5 {
-		fmt.Printf("Error more path: %s\n", r.URL.Path)
+		log.Printf("Bad URL: %s (expected 5 parts)", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	fmt.Println(urlPath)
+	metricType := urlPath[2]
+	name := urlPath[3]
+	value := urlPath[4]
 
-	if urlPath[2] == "gauge" {
-		nameGauge := urlPath[3]
-		countGauge := urlPath[4]
+	if name == "" {
+		log.Printf("Empty metric name in URL: %s", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 
-		value, err := strconv.ParseFloat(countGauge, 64)
+	switch metricType {
+	case "gauge":
+		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			fmt.Printf("Error type: %s\n", countGauge)
+			log.Printf("Invalid gauge value %q for metric %q: %v", value, name, err)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		memStorage.gauge[nameGauge] = value
-		return
-	}
+		log.Printf("Gauge updated: %s = %f", name, val)
+		h.MS.GaugeSet(name, val)
 
-	if urlPath[2] == "counter" {
-		nameCounter := urlPath[3]
-		countCounter := urlPath[4]
-
-		valueCounter, err := strconv.ParseInt(countCounter, 10, 64)
+	case "counter":
+		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			fmt.Printf("Error type: %s\n", countCounter)
+			log.Printf("Invalid counter value %q for metric %q: %v", value, name, err)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if memStorage.counter[nameCounter] == nil {
-			memStorage.counter[nameCounter] = make([]int64, 0, 8)
-		}
-		memStorage.counter[nameCounter] = append(memStorage.counter[nameCounter], valueCounter)
+		log.Printf("Counter updated: %s += %d", name, val)
+		h.MS.CounterSet(name, val)
+
+	default:
+		log.Printf("Unknown metric type %q in request %s", metricType, r.URL.Path)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	fmt.Println("NULL")
+
+	w.WriteHeader(http.StatusOK)
 }
+
+func (h Handler) DataMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
+	if r.Method != http.MethodGet {
+		log.Printf("Rejected: method %s not allowed on /metrics", r.Method)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	body := "====== Metrics ======\n"
+
+	body += "\n### Gauge\n"
+
+	gauges := h.MS.Gauge()
+
+	if len(gauges) == 0 {
+		body += "\tNot found\n"
+	} else {
+		for name, value := range gauges {
+			body += fmt.Sprintf("\t%s = %f\n", name, value)
+		}
+	}
+
+	body += "\n### Counter\n"
+
+	counters := h.MS.Counter()
+
+	if len(counters) == 0 {
+		body += "\tNot found\n"
+	} else {
+		for name, value := range counters {
+			body += fmt.Sprintf("\t%s = %d\n", name, value)
+		}
+	}
+
+	log.Printf("Metrics:\nGauges = %v\nCounters = %v", gauges, counters)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(body))
+}
+
+// -----------------------------------------------------------------
