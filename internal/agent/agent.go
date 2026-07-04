@@ -13,22 +13,23 @@ import (
 
 type Agent struct {
 	url            string
-	pollInterval   int64
-	reportInterval int64
+	client         *http.Client
+	pollInterval   int
+	reportInterval int
 	pollCount      int64
 	randomValue    float64
 	memData        repository.RepoMemStats
-	data           map[string]float64
 }
 
 func NewAgentMetric(
 	url string,
-	pollInterval int64,
-	reportInterval int64,
+	pollInterval int,
+	reportInterval int,
 	memData repository.RepoMemStats,
 ) *Agent {
 	return &Agent{
 		url:            url,
+		client:         &http.Client{},
 		pollInterval:   pollInterval,
 		reportInterval: reportInterval,
 		pollCount:      0,
@@ -37,7 +38,7 @@ func NewAgentMetric(
 	}
 }
 
-func (a Agent) postMetrics(metric, name, value string) bool {
+func (a *Agent) postMetrics(metric, name, value string) bool {
 	client := &http.Client{}
 
 	url := fmt.Sprintf("%s/update/%s/%s/%s", a.url, metric, name, value)
@@ -66,34 +67,49 @@ func (a Agent) postMetrics(metric, name, value string) bool {
 	return true
 }
 
-func (a Agent) updateMetric() {
-	for {
-		time.Sleep(time.Duration(a.pollInterval) * time.Second)
-		a.memData.Update()
-		for k, v := range a.memData.GetAll() {
-			a.data[k] = v
-		}
+func (a *Agent) updateMetric() {
+	a.memData.Update()
+	a.randomValue = rand.Float64()
+	a.pollCount++
+}
 
-		a.randomValue = rand.Float64()
-		a.pollCount++
+func (a *Agent) pushMetrics() {
+	for k, v := range a.memData.GetAll() {
+		valStr := strconv.FormatFloat(v, 'f', -1, 64)
+		err := a.postMetrics("gauge", k, valStr)
+		if !err {
+			log.Printf("Failed send metrics gauge %s = %s", k, valStr)
+		}
+	}
+	randGauge := strconv.FormatFloat(a.randomValue, 'f', -1, 64)
+	counter := strconv.FormatInt(a.pollCount, 10)
+	err := a.postMetrics("gauge", "RandomValue", randGauge)
+	if !err {
+		log.Printf("Failed send metrics gauge RandomValue = %s", randGauge)
+	}
+
+	err = a.postMetrics("counter", "PollCount", counter)
+	if !err {
+		log.Printf("Failed send metrics counter PollCount = %s", counter)
 	}
 }
 
-func (a Agent) PushMetrics() {
-	for {
-		time.Sleep(time.Duration(a.pollCount) * time.Second)
-		for k, v := range a.data {
-			valStr := strconv.FormatFloat(v, 'f', -1, 64)
-			a.postMetrics("gauge", k, valStr)
-		}
-		randGauge := strconv.FormatFloat(a.randomValue, 'f', -1, 64)
-		counter := strconv.FormatInt(a.pollCount, 10)
-		a.postMetrics("gauge", "RandomValue", randGauge)
-		a.postMetrics("counter", "PollCount", counter)
-	}
-}
+func (a *Agent) Run() {
+	pollTicker := time.NewTicker(time.Duration(a.pollInterval) * time.Second)
+	reportTicker := time.NewTicker(time.Duration(a.reportInterval) * time.Second)
+	defer pollTicker.Stop()
+	defer reportTicker.Stop()
 
-func (a Agent) Run() {
-	go a.PushMetrics()
-	go a.updateMetric()
+	log.Println("Agent run")
+
+	for {
+		select {
+		case <-pollTicker.C:
+			log.Println("Agent update")
+			a.updateMetric()
+		case <-reportTicker.C:
+			log.Println("Agent push metrics")
+			a.pushMetrics()
+		}
+	}
 }
