@@ -6,20 +6,15 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/Tamer-Li/devops-metrics/internal/repository"
 )
 
-type MetricsStorage interface {
-	GaugeSet(name string, value float64)
-	CounterSet(name string, value int64)
-	Gauge() map[string]float64
-	Counter() map[string]int64
-}
-
 type Handler struct {
-	MS MetricsStorage
+	MS repository.MetricsStorage
 }
 
-func NewHandler(ms MetricsStorage) *Handler {
+func NewHandler(ms repository.MetricsStorage) *Handler {
 	return &Handler{
 		MS: ms,
 	}
