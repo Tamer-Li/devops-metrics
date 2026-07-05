@@ -5,9 +5,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/Tamer-Li/devops-metrics/internal/repository"
+	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
@@ -20,38 +20,92 @@ func NewHandler(ms repository.MetricsStorage) *Handler {
 	}
 }
 
-func (h Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
+func (h *Handler) Router() chi.Router {
+	router := chi.NewRouter()
 
-	if r.Method != http.MethodPost {
-		log.Printf("Rejected: method %s not allowed", r.Method)
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
+	router.Get("/", h.metricsHandler)
+	router.Get("/value/{typeMetric}/{nameMetric}", h.metricValue)
+	router.Post("/update/{typeMetric}/{nameMetric}/{valueMetric}", h.updateMetric)
+
+	return router
+}
+
+func (h *Handler) metricsHandler(rw http.ResponseWriter, r *http.Request) {
+	rw.Header().Set("Content-Type", "text/html")
+	rw.WriteHeader(http.StatusOK)
+
+	body := `
+<html>
+<head><title>Metrics</title></head>
+<body>
+<h1>Metrics</h1>
+<table border="1">
+<tr><th>Type</th><th>Name</th><th>Value</th></tr>	
+	`
+	for name, value := range h.MS.Gauges() {
+		body += fmt.Sprintf("<tr><td>gauge</td><td>%s</td><td>%f</td></tr>", name, value)
 	}
 
-	urlPath := strings.Split(r.URL.Path, "/")
-	if len(urlPath) != 5 {
-		log.Printf("Bad URL: %s (expected 5 parts)", r.URL.Path)
-		w.WriteHeader(http.StatusNotFound)
-		return
+	for name, value := range h.MS.Counters() {
+		body += fmt.Sprintf("<tr><td>counter</td><td>%s</td><td>%d</td></tr>", name, value)
 	}
 
-	metricType := urlPath[2]
-	name := urlPath[3]
-	value := urlPath[4]
+	body += "</table></body></html>"
+
+	rw.Write([]byte(body))
+}
+
+func (h *Handler) metricValue(rw http.ResponseWriter, r *http.Request) {
+	typeMetric := chi.URLParam(r, "typeMetric")
+	nameMetric := chi.URLParam(r, "nameMetric")
+
+	switch typeMetric {
+	case "gauge":
+		value, ok := h.MS.Gauge(nameMetric)
+		if !ok {
+			rw.WriteHeader(http.StatusNotFound)
+			return
+		}
+		rw.Header().Set("Content-Type", "text/plain")
+		rw.WriteHeader(http.StatusOK)
+
+		body := strconv.FormatFloat(value, 'f', 0, 64)
+
+		rw.Write([]byte(body))
+	case "counter":
+		value, ok := h.MS.Counter(nameMetric)
+		if !ok {
+			rw.WriteHeader(http.StatusNotFound)
+			return
+		}
+		rw.Header().Set("Content-Type", "text/plain")
+		rw.WriteHeader(http.StatusOK)
+
+		body := strconv.FormatInt(value, 64)
+
+		rw.Write([]byte(body))
+	default:
+		rw.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
+	typeMetric := chi.URLParam(r, "typeMetric")
+	name := chi.URLParam(r, "nameMetric")
+	value := chi.URLParam(r, "valueMetric")
 
 	if name == "" {
-		log.Printf("Empty metric name in URL: %s", r.URL.Path)
-		w.WriteHeader(http.StatusNotFound)
+		log.Println("Empty metric name")
+		rw.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	switch metricType {
+	switch typeMetric {
 	case "gauge":
 		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
 			log.Printf("Invalid gauge value %q for metric %q: %v", value, name, err)
-			w.WriteHeader(http.StatusBadRequest)
+			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		log.Printf("Gauge updated: %s = %f", name, val)
@@ -61,58 +115,17 @@ func (h Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
 			log.Printf("Invalid counter value %q for metric %q: %v", value, name, err)
-			w.WriteHeader(http.StatusBadRequest)
+			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		log.Printf("Counter updated: %s += %d", name, val)
 		h.MS.CounterSet(name, val)
 
 	default:
-		log.Printf("Unknown metric type %q in request %s", metricType, r.URL.Path)
-		w.WriteHeader(http.StatusBadRequest)
+		log.Printf("Unknown metric type %q in request %s", typeMetric, r.URL.Path)
+		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-}
-
-func (h Handler) DataMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-
-	if r.Method != http.MethodGet {
-		log.Printf("Rejected: method %s not allowed on /metrics", r.Method)
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	body := "====== Metrics ======\n"
-
-	body += "\n### Gauge\n"
-
-	gauges := h.MS.Gauge()
-
-	if len(gauges) == 0 {
-		body += "\tNot found\n"
-	} else {
-		for name, value := range gauges {
-			body += fmt.Sprintf("\t%s = %f\n", name, value)
-		}
-	}
-
-	body += "\n### Counter\n"
-
-	counters := h.MS.Counter()
-
-	if len(counters) == 0 {
-		body += "\tNot found\n"
-	} else {
-		for name, value := range counters {
-			body += fmt.Sprintf("\t%s = %d\n", name, value)
-		}
-	}
-
-	log.Printf("Metrics:\nGauges = %v\nCounters = %v", gauges, counters)
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(body))
+	rw.WriteHeader(http.StatusOK)
 }

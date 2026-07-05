@@ -12,12 +12,22 @@ func NewMemStorage() *MemStorage {
 	}
 }
 
-func (ms *MemStorage) Gauge() map[string]float64 {
+func (ms *MemStorage) Gauges() map[string]float64 {
 	return ms.gauge
 }
 
-func (ms *MemStorage) Counter() map[string]int64 {
+func (ms *MemStorage) Counters() map[string]int64 {
 	return ms.counter
+}
+
+func (ms *MemStorage) Gauge(name string) (float64, bool) {
+	value, ok := ms.gauge[name]
+	return value, ok
+}
+
+func (ms *MemStorage) Counter(name string) (int64, bool) {
+	value, ok := ms.counter[name]
+	return value, ok
 }
 
 func (ms *MemStorage) GaugeSet(name string, value float64) {
