@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 
@@ -8,14 +9,22 @@ import (
 	"github.com/Tamer-Li/devops-metrics/internal/storage"
 )
 
-func main() {
+var settings struct {
+	address string
+}
 
+func init() {
+	flag.StringVar(&settings.address, "a", "localhost:8080", "address endpoint http-server")
+}
+
+func main() {
+	flag.Parse()
 	memStorage := storage.NewMemStorage()
 
 	apiRouter := handler.NewHandler(memStorage).Router()
 
-	log.Println("Starting server on :8080")
-	err := http.ListenAndServe(`:8080`, apiRouter)
+	log.Printf("Starting server on %s", settings.address)
+	err := http.ListenAndServe(settings.address, apiRouter)
 	if err != nil {
 		log.Fatal(err)
 	}
