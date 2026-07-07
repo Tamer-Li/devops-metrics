@@ -43,7 +43,7 @@ func (h *Handler) metricsHandler(rw http.ResponseWriter, r *http.Request) {
 <tr><th>Type</th><th>Name</th><th>Value</th></tr>	
 	`
 	for name, value := range h.MS.Gauges() {
-		body += fmt.Sprintf("<tr><td>gauge</td><td>%s</td><td>%f</td></tr>", name, value)
+		body += fmt.Sprintf("<tr><td>gauge</td><td>%s</td><td>%s</td></tr>", name, strconv.FormatFloat(value, 'f', -1, 64))
 	}
 
 	for name, value := range h.MS.Counters() {
@@ -69,7 +69,7 @@ func (h *Handler) metricValue(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "text/plain")
 		rw.WriteHeader(http.StatusOK)
 
-		body := strconv.FormatFloat(value, 'f', 0, 64)
+		body := strconv.FormatFloat(value, 'f', -1, 64)
 
 		rw.Write([]byte(body))
 	case "counter":
@@ -81,7 +81,7 @@ func (h *Handler) metricValue(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "text/plain")
 		rw.WriteHeader(http.StatusOK)
 
-		body := strconv.FormatInt(value, 64)
+		body := strconv.FormatInt(value, 10)
 
 		rw.Write([]byte(body))
 	default:
