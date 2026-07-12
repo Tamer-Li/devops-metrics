@@ -1,13 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/caarlos0/env/v6"
 )
 
 type Config struct {
-	address string `env:"ADDRESS"`
+	Address string `env:"ADDRESS,required"`
 }
 
 func NewConfig() *Config {
@@ -17,9 +18,22 @@ func NewConfig() *Config {
 		log.Printf("Error parse configuration parameters:\n%s", err.Error())
 		return nil
 	}
+	fmt.Println(cfg)
 	return &cfg
 }
 
-func (c Config) Address() string {
-	return c.address
+type ConfigAgent struct {
+	Address        string `env:"ADDRESS,required"`
+	ReportInterval int    `env:"REPORT_INTERVAL,required"`
+	PollInterval   int    `env:"POLL_INTERVAL,required"`
+}
+
+func NewConfigAgent() *ConfigAgent {
+	var cfgAgent ConfigAgent
+	err := env.Parse(&cfgAgent)
+	if err != nil {
+		log.Printf("Error parse configuration parameters:\n%s", err.Error())
+		return nil
+	}
+	return &cfgAgent
 }
