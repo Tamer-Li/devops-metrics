@@ -23,7 +23,7 @@ func main() {
 
 	cfg := config.NewConfig()
 	if cfg != nil {
-		settings.address = cfg.Address
+		settings.address = cfg.Address()
 	}
 
 	memStorage := storage.NewMemStorage()

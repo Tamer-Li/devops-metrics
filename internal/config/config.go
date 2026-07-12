@@ -7,7 +7,7 @@ import (
 )
 
 type Config struct {
-	Address string `env:"ADDRESS"`
+	address string `env:"ADDRESS"`
 }
 
 func NewConfig() *Config {
@@ -18,4 +18,8 @@ func NewConfig() *Config {
 		return nil
 	}
 	return &cfg
+}
+
+func (c Config) Address() string {
+	return c.address
 }
