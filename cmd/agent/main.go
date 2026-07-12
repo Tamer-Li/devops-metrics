@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Tamer-Li/devops-metrics/internal/agent"
+	"github.com/Tamer-Li/devops-metrics/internal/config"
 	"github.com/Tamer-Li/devops-metrics/internal/service"
 )
 
@@ -22,6 +23,14 @@ func init() {
 
 func main() {
 	flag.Parse()
+
+	cfg := config.NewConfigAgent()
+	if cfg != nil {
+		settings.address = cfg.Address
+		settings.reportInterval = cfg.ReportInterval
+		settings.pollInterval = cfg.PollInterval
+	}
+
 	url := fmt.Sprintf("http://%s", settings.address)
 	memStats := service.NewMemStatsRuntime()
 

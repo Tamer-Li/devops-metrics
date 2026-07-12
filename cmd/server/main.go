@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Tamer-Li/devops-metrics/internal/config"
 	"github.com/Tamer-Li/devops-metrics/internal/handler"
 	"github.com/Tamer-Li/devops-metrics/internal/storage"
 )
@@ -19,6 +20,12 @@ func init() {
 
 func main() {
 	flag.Parse()
+
+	cfg := config.NewConfig()
+	if cfg != nil {
+		settings.address = cfg.Address
+	}
+
 	memStorage := storage.NewMemStorage()
 
 	apiRouter := handler.NewHandler(memStorage).Router()
