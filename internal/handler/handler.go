@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
@@ -95,7 +94,6 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 	value := chi.URLParam(r, "valueMetric")
 
 	if name == "" {
-		log.Println("Empty metric name")
 		rw.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -104,25 +102,20 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 	case "gauge":
 		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			log.Printf("Invalid gauge value %q for metric %q: %v", value, name, err)
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		log.Printf("Gauge updated: %s = %f", name, val)
 		h.MS.GaugeSet(name, val)
 
 	case "counter":
 		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			log.Printf("Invalid counter value %q for metric %q: %v", value, name, err)
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		log.Printf("Counter updated: %s += %d", name, val)
 		h.MS.CounterSet(name, val)
 
 	default:
-		log.Printf("Unknown metric type %q in request %s", typeMetric, r.URL.Path)
 		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}

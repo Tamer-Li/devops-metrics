@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tamer-Li/devops-metrics/internal/config"
 	"github.com/Tamer-Li/devops-metrics/internal/handler"
+	"github.com/Tamer-Li/devops-metrics/internal/logger"
 	"github.com/Tamer-Li/devops-metrics/internal/storage"
 )
 
@@ -26,13 +27,15 @@ func main() {
 		settings.address = cfg.Address
 	}
 
+	logHome := logger.NewHomeLogger()
+
 	memStorage := storage.NewMemStorage()
 
 	apiRouter := handler.NewHandler(memStorage).Router()
 
 	log.Printf("Starting server on %s", settings.address)
-	err := http.ListenAndServe(settings.address, apiRouter)
+	err := http.ListenAndServe(settings.address, logHome.WithLogging(apiRouter))
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 }
