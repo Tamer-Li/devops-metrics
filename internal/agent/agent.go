@@ -67,6 +67,35 @@ func (a *Agent) postMetrics(metric, name, value string) bool {
 	return true
 }
 
+func (a *Agent) postMetricsJSON(metric, name, value string) bool {
+	client := &http.Client{}
+
+	url := fmt.Sprintf("%s/update", a.url)
+
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		log.Printf("Failed to create request: %v", err)
+		return false
+	}
+
+	req.Header.Set("Content-Type", "text/plain")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Failed to send metric %s/%s: %v", metric, name, err)
+		return false
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Non-OK status for %s/%s: %d", metric, name, resp.StatusCode)
+		return false
+	}
+
+	return true
+}
+
 func (a *Agent) updateMetric() {
 	a.memData.Update()
 	a.randomValue = rand.Float64()
