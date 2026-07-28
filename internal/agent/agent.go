@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -8,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	models "github.com/Tamer-Li/devops-metrics/internal/model"
 	"github.com/Tamer-Li/devops-metrics/internal/repository"
 )
 
@@ -67,32 +70,51 @@ func (a *Agent) postMetrics(metric, name, value string) bool {
 	return true
 }
 
-func (a *Agent) postMetricsJSON(metric, name, value string) bool {
-	client := &http.Client{}
+func (a *Agent) postMetricJSON(metricType, name string, value float64, delta int64) bool {
+	var metric models.Metrics
+	metric.ID = name
+	metric.MType = metricType
+
+	switch metricType {
+	case models.Gauge:
+		metric.Value = &value
+		metric.Delta = nil
+	case models.Counter:
+		metric.Delta = &delta
+		metric.Value = nil
+	default:
+		log.Printf("Unsupported metric type: %s", metricType)
+		return false
+	}
+
+	jsonData, err := json.Marshal(metric)
+	if err != nil {
+		log.Printf("Failed to marshal metric %s/%s: %v", metricType, name, err)
+		return false
+	}
 
 	url := fmt.Sprintf("%s/update", a.url)
-
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Printf("Failed to create request: %v", err)
+		log.Printf("Failed to create request for %s/%s: %v", metricType, name, err)
 		return false
 	}
 
-	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	resp, err := a.client.Do(req)
 	if err != nil {
-		log.Printf("Failed to send metric %s/%s: %v", metric, name, err)
+		log.Printf("Failed to send metric %s/%s: %v", metricType, name, err)
 		return false
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Non-OK status for %s/%s: %d", metric, name, resp.StatusCode)
+		log.Printf("Non-OK status for %s/%s: %d", metricType, name, resp.StatusCode)
 		return false
 	}
 
+	log.Printf("Successfully sent metric %s/%s", metricType, name)
 	return true
 }
 
@@ -120,6 +142,16 @@ func (a *Agent) pushMetrics() {
 	err = a.postMetrics("counter", "PollCount", counter)
 	if !err {
 		log.Printf("Failed send metrics counter PollCount = %s", counter)
+	}
+
+	err = a.postMetricJSON("gauge", "RandomValue", a.randomValue, 0)
+	if !err {
+		log.Printf("Failed send JSON metrics gauge RandomValue = %s", randGauge)
+	}
+
+	err = a.postMetricJSON("counter", "PollCount", 0, a.pollCount)
+	if !err {
+		log.Printf("Failed send JSON metrics counter PollCount = %s", counter)
 	}
 }
 
