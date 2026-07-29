@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Tamer-Li/devops-metrics/internal/arc"
 	models "github.com/Tamer-Li/devops-metrics/internal/model"
 	"github.com/Tamer-Li/devops-metrics/internal/repository"
 )
@@ -94,15 +94,8 @@ func (a *Agent) postMetricJSON(metricType, name string, value float64, delta int
 	}
 
 	url := fmt.Sprintf("%s/update", a.url)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		log.Printf("Failed to create request for %s/%s: %v", metricType, name, err)
-		return false
-	}
 
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := a.client.Do(req)
+	resp, err := a.compress(url, metric, jsonData)
 	if err != nil {
 		log.Printf("Failed to send metric %s/%s: %v", metricType, name, err)
 		return false
@@ -173,4 +166,32 @@ func (a *Agent) Run() {
 			a.pushMetrics()
 		}
 	}
+}
+
+// func (a Agent) noCompress(url string, metric models.Metrics, data []byte) (*http.Response, error) {
+// 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(data))
+// 	if err != nil {
+// 		return nil, fmt.Errorf("Failed to create request:%v\nError: %v", metric, err)
+// 	}
+
+// 	req.Header.Set("Content-Type", "application/json")
+
+// 	return a.client.Do(req)
+// }
+
+func (a Agent) compress(url string, metric models.Metrics, data []byte) (*http.Response, error) {
+	compressedData, err := arc.Compress(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compress data: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, compressedData)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create request:%v\nError: %v", metric, err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	return a.client.Do(req)
 }
