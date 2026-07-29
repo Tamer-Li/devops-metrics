@@ -8,7 +8,10 @@ import (
 )
 
 type Config struct {
-	Address string `env:"ADDRESS,required"`
+	Address         string `env:"ADDRESS,required"`
+	StoreInterval   int    `env:"STORE_INTERVAL,required"`
+	FileStoragePath string `env:"FILE_STORAGE_PATH,required"`
+	Restore         bool   `env:"RESTORE,required"`
 }
 
 func NewConfig() *Config {

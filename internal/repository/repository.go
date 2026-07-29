@@ -13,3 +13,10 @@ type RepoMemStats interface {
 	Update()
 	GetAll() map[string]float64
 }
+
+type RepoFilesStorage interface {
+	SyncSave() bool
+	Load() error
+	Save() error
+	StartIntervalSave()
+}
