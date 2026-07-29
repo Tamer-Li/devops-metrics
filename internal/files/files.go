@@ -26,6 +26,10 @@ func NewFilesStorage(memStorage repository.MetricsStorage, filePath string, stor
 	}
 }
 
+func (fs *FilesStorage) SyncSave() bool {
+	return fs.storeInterval > 0
+}
+
 func (fs *FilesStorage) Save() error {
 	gauges := fs.memStorage.Gauges()
 	counters := fs.memStorage.Counters()

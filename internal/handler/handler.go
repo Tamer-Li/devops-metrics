@@ -116,7 +116,9 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.MS.GaugeSet(name, val)
-		h.RepoFS.Save()
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
 
 	case models.Counter:
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -125,7 +127,9 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.MS.CounterSet(name, val)
-		h.RepoFS.Save()
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
 
 	default:
 		rw.WriteHeader(http.StatusBadRequest)
@@ -245,11 +249,15 @@ func (h *Handler) updateMetricJSON(rw http.ResponseWriter, r *http.Request) {
 	switch metric.MType {
 	case models.Gauge:
 		h.MS.GaugeSet(metric.ID, *metric.Value)
-		h.RepoFS.Save()
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
 
 	case models.Counter:
 		h.MS.CounterSet(metric.ID, *metric.Delta)
-		h.RepoFS.Save()
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
 
 	default:
 		rw.WriteHeader(http.StatusBadRequest)

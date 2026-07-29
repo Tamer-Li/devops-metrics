@@ -15,6 +15,7 @@ type RepoMemStats interface {
 }
 
 type RepoFilesStorage interface {
+	SyncSave() bool
 	Load() error
 	Save() error
 	StartIntervalSave()
