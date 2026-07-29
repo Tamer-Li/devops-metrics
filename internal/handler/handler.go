@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Tamer-Li/devops-metrics/internal/arc"
 	models "github.com/Tamer-Li/devops-metrics/internal/model"
 	"github.com/Tamer-Li/devops-metrics/internal/repository"
 	"github.com/go-chi/chi/v5"
@@ -132,6 +133,11 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) metricValueJSON(rw http.ResponseWriter, r *http.Request) {
 
+	body, err := arc.RZIPBody(rw, r)
+	if err != nil {
+		return
+	}
+
 	if r.Header.Get("Content-Type") != "application/json" {
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Content-Type is Failed"))
@@ -140,7 +146,7 @@ func (h *Handler) metricValueJSON(rw http.ResponseWriter, r *http.Request) {
 	var metric models.Metrics
 	var buf bytes.Buffer
 
-	_, err := buf.ReadFrom(r.Body)
+	_, err = buf.ReadFrom(body)
 	if err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Request body is Failed"))
@@ -199,6 +205,11 @@ func (h *Handler) metricValueJSON(rw http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) updateMetricJSON(rw http.ResponseWriter, r *http.Request) {
 
+	body, err := arc.RZIPBody(rw, r)
+	if err != nil {
+		return
+	}
+
 	if r.Header.Get("Content-Type") != "application/json" {
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Content-Type is Failed"))
@@ -208,7 +219,7 @@ func (h *Handler) updateMetricJSON(rw http.ResponseWriter, r *http.Request) {
 	var metric models.Metrics
 	var buf bytes.Buffer
 
-	_, err := buf.ReadFrom(r.Body)
+	_, err = buf.ReadFrom(body)
 	if err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte("Request body is Failed"))

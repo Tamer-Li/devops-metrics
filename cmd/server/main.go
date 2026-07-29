@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Tamer-Li/devops-metrics/internal/arc"
 	"github.com/Tamer-Li/devops-metrics/internal/config"
 	"github.com/Tamer-Li/devops-metrics/internal/handler"
 	"github.com/Tamer-Li/devops-metrics/internal/logger"
@@ -34,7 +35,7 @@ func main() {
 	apiRouter := handler.NewHandler(memStorage).Router()
 
 	log.Printf("Starting server on %s", settings.address)
-	err := http.ListenAndServe(settings.address, logHome.WithLogging(apiRouter))
+	err := http.ListenAndServe(settings.address, logHome.WithLogging(arc.GZIPHandle(apiRouter)))
 	if err != nil {
 		panic(err)
 	}
