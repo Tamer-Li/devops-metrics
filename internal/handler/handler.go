@@ -1,22 +1,27 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/Tamer-Li/devops-metrics/internal/arc"
+	models "github.com/Tamer-Li/devops-metrics/internal/model"
 	"github.com/Tamer-Li/devops-metrics/internal/repository"
 	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
-	MS repository.MetricsStorage
+	MS     repository.MetricsStorage
+	RepoFS repository.RepoFilesStorage
 }
 
-func NewHandler(ms repository.MetricsStorage) *Handler {
+func NewHandler(ms repository.MetricsStorage, repoFS repository.RepoFilesStorage) *Handler {
 	return &Handler{
-		MS: ms,
+		MS:     ms,
+		RepoFS: repoFS,
 	}
 }
 
@@ -25,6 +30,10 @@ func (h *Handler) Router() chi.Router {
 
 	router.Get("/", h.metricsHandler)
 	router.Get("/value/{typeMetric}/{nameMetric}", h.metricValue)
+
+	router.Post("/value", h.metricValueJSON)
+	router.Post("/update", h.updateMetricJSON)
+
 	router.Post("/update/{typeMetric}/{nameMetric}/{valueMetric}", h.updateMetric)
 
 	return router
@@ -60,7 +69,7 @@ func (h *Handler) metricValue(rw http.ResponseWriter, r *http.Request) {
 	nameMetric := chi.URLParam(r, "nameMetric")
 
 	switch typeMetric {
-	case "gauge":
+	case models.Gauge:
 		value, ok := h.MS.Gauge(nameMetric)
 		if !ok {
 			rw.WriteHeader(http.StatusNotFound)
@@ -72,7 +81,7 @@ func (h *Handler) metricValue(rw http.ResponseWriter, r *http.Request) {
 		body := strconv.FormatFloat(value, 'f', -1, 64)
 
 		rw.Write([]byte(body))
-	case "counter":
+	case models.Counter:
 		value, ok := h.MS.Counter(nameMetric)
 		if !ok {
 			rw.WriteHeader(http.StatusNotFound)
@@ -95,34 +104,162 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 	value := chi.URLParam(r, "valueMetric")
 
 	if name == "" {
-		log.Println("Empty metric name")
 		rw.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	switch typeMetric {
-	case "gauge":
+	case models.Gauge:
 		val, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			log.Printf("Invalid gauge value %q for metric %q: %v", value, name, err)
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		log.Printf("Gauge updated: %s = %f", name, val)
 		h.MS.GaugeSet(name, val)
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
 
-	case "counter":
+	case models.Counter:
 		val, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			log.Printf("Invalid counter value %q for metric %q: %v", value, name, err)
 			rw.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		log.Printf("Counter updated: %s += %d", name, val)
 		h.MS.CounterSet(name, val)
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
 
 	default:
-		log.Printf("Unknown metric type %q in request %s", typeMetric, r.URL.Path)
+		rw.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	rw.WriteHeader(http.StatusOK)
+}
+
+func (h *Handler) metricValueJSON(rw http.ResponseWriter, r *http.Request) {
+
+	body, err := arc.RZIPBody(rw, r)
+	if err != nil {
+		return
+	}
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Content-Type is Failed"))
+		return
+	}
+	var metric models.Metrics
+	var buf bytes.Buffer
+
+	_, err = buf.ReadFrom(body)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Request body is Failed"))
+		return
+	}
+
+	err = json.Unmarshal(buf.Bytes(), &metric)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Request body model is Failed"))
+		return
+	}
+
+	switch metric.MType {
+	case models.Gauge:
+		value, ok := h.MS.Gauge(metric.ID)
+		if !ok {
+			rw.WriteHeader(http.StatusNotFound)
+			rw.Write([]byte("No found"))
+			return
+		}
+		metric.Value = &value
+		resp, err := json.Marshal(metric)
+		if err != nil {
+			rw.WriteHeader(http.StatusInternalServerError)
+			rw.Write([]byte("Server err json serialized"))
+			return
+		}
+
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusOK)
+		rw.Write(resp)
+
+	case models.Counter:
+		value, ok := h.MS.Counter(metric.ID)
+		if !ok {
+			rw.WriteHeader(http.StatusNotFound)
+			rw.Write([]byte("No found"))
+			return
+		}
+		metric.Delta = &value
+		resp, err := json.Marshal(metric)
+		if err != nil {
+			rw.WriteHeader(http.StatusInternalServerError)
+			rw.Write([]byte("Server err json serialized"))
+			return
+		}
+
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusOK)
+		rw.Write(resp)
+	default:
+		rw.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func (h *Handler) updateMetricJSON(rw http.ResponseWriter, r *http.Request) {
+
+	body, err := arc.RZIPBody(rw, r)
+	if err != nil {
+		return
+	}
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Content-Type is Failed"))
+		return
+	}
+
+	var metric models.Metrics
+	var buf bytes.Buffer
+
+	_, err = buf.ReadFrom(body)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Request body is Failed"))
+		return
+	}
+
+	err = json.Unmarshal(buf.Bytes(), &metric)
+	if err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte("Request body model is Failed"))
+		return
+	}
+
+	if metric.ID == "" {
+		rw.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	switch metric.MType {
+	case models.Gauge:
+		h.MS.GaugeSet(metric.ID, *metric.Value)
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
+
+	case models.Counter:
+		h.MS.CounterSet(metric.ID, *metric.Delta)
+		if !h.RepoFS.SyncSave() {
+			h.RepoFS.Save()
+		}
+
+	default:
 		rw.WriteHeader(http.StatusBadRequest)
 		return
 	}
