@@ -14,12 +14,14 @@ import (
 )
 
 type Handler struct {
-	MS repository.MetricsStorage
+	MS     repository.MetricsStorage
+	RepoFS repository.RepoFilesStorage
 }
 
-func NewHandler(ms repository.MetricsStorage) *Handler {
+func NewHandler(ms repository.MetricsStorage, repoFS repository.RepoFilesStorage) *Handler {
 	return &Handler{
-		MS: ms,
+		MS:     ms,
+		RepoFS: repoFS,
 	}
 }
 
@@ -114,6 +116,7 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.MS.GaugeSet(name, val)
+		h.RepoFS.Save()
 
 	case models.Counter:
 		val, err := strconv.ParseInt(value, 10, 64)
@@ -122,6 +125,7 @@ func (h *Handler) updateMetric(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.MS.CounterSet(name, val)
+		h.RepoFS.Save()
 
 	default:
 		rw.WriteHeader(http.StatusBadRequest)
@@ -241,9 +245,11 @@ func (h *Handler) updateMetricJSON(rw http.ResponseWriter, r *http.Request) {
 	switch metric.MType {
 	case models.Gauge:
 		h.MS.GaugeSet(metric.ID, *metric.Value)
+		h.RepoFS.Save()
 
 	case models.Counter:
 		h.MS.CounterSet(metric.ID, *metric.Delta)
+		h.RepoFS.Save()
 
 	default:
 		rw.WriteHeader(http.StatusBadRequest)
